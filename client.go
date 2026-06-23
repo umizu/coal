@@ -1,4 +1,4 @@
-package rail
+package coal
 
 import (
 	"bytes"
@@ -10,20 +10,19 @@ import (
 	"sync/atomic"
 )
 
-type MessageType int32
+type messageType int32
 
 const (
-	MessageTypeResponse MessageType = iota
+	messageTypeResponse messageType = iota
 	_
-	MessageTypeCommand
-	MessageTypeLogin
+	messageTypeCommand
+	messageTypeLogin
 
 	headerSize     = 10
 	maxPayloadSize = 1446
 )
 
 var (
-	ErrUnreachable     = errors.New("failed to connect to the server")
 	ErrUnauthenticated = errors.New("invalid password")
 	ErrBadPayload      = errors.New("payload too large")
 )
@@ -54,15 +53,15 @@ func (rc *RCONClient) Send(cmd string) (Message, error) {
 	}
 
 	msg := Message{
-		Length:  int32(len(cmd) + headerSize),
+		length:  int32(len(cmd) + headerSize),
 		ReqId:   rc.reqId.Add(1),
-		Payload: cmd,
+		Content: cmd,
 	}
 
 	if msg.ReqId == 1 {
-		msg.Type = MessageTypeLogin
+		msg.msgType = messageTypeLogin
 	} else {
-		msg.Type = MessageTypeCommand
+		msg.msgType = messageTypeCommand
 	}
 
 	rc.mu.Lock()
@@ -82,6 +81,7 @@ func (rc *RCONClient) Send(cmd string) (Message, error) {
 	if err != nil {
 		return Message{}, nil
 	}
+
 	return resp, err
 }
 
@@ -90,13 +90,13 @@ func (rc *RCONClient) Close() {
 }
 
 func encode(msg Message) []byte {
-	length := len(msg.Payload) + headerSize + 4
+	length := len(msg.Content) + headerSize + 4
 
 	buf := make([]byte, 0, length)
 	buf = binary.LittleEndian.AppendUint32(buf, uint32(length-4)) // len of remaining data
 	buf = binary.LittleEndian.AppendUint32(buf, uint32(msg.ReqId))
-	buf = binary.LittleEndian.AppendUint32(buf, uint32(msg.Type))
-	buf = append(buf, msg.Payload...)
+	buf = binary.LittleEndian.AppendUint32(buf, uint32(msg.msgType))
+	buf = append(buf, msg.Content...)
 	buf = append(buf, 0, 0)
 
 	return buf
@@ -115,15 +115,15 @@ func decode(b []byte) (Message, error) {
 		return Message{}, err
 	}
 
-	var respType MessageType
+	var respType messageType
 	if err := binary.Read(reader, binary.LittleEndian, &respType); err != nil {
 		return Message{}, err
 	}
 
 	msg := Message{
-		Length: length,
-		ReqId:  reqId,
-		Type:   respType,
+		length:  length,
+		ReqId:   reqId,
+		msgType: respType,
 	}
 
 	payloadSize := length - headerSize
@@ -133,16 +133,16 @@ func decode(b []byte) (Message, error) {
 		if err != nil {
 			return Message{}, err
 		}
-		msg.Payload = string(data)
+		msg.Content = string(data)
 	}
 	return msg, nil
 }
 
 type Message struct {
-	Length  int32
+	Content string
 	ReqId   int32
-	Type    MessageType
-	Payload string
+	msgType messageType
+	length  int32
 }
 
 type RCONClient struct {
